@@ -13,7 +13,7 @@ namespace APIUsuarios.Infrastructure.Data
         {
             mb.Entity<User>(e =>
             {
-                e.ToTable("Users");
+                e.ToTable("users");
                 e.HasKey(x => x.Id);
                 e.Property(x => x.Email).IsRequired().HasMaxLength(160);
                 e.Property(x => x.Nome).IsRequired().HasMaxLength(160);

@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Http;
 using System.Threading.Tasks;
 using System;
 using System.Threading;
+using APIUsuarios.Domain;
 
 public class UsersControllerTests
 {
@@ -33,86 +34,104 @@ public class UsersControllerTests
         };
     }
 
-    //[Fact]
-    //public async Task List_ReturnsPagedResult()
-    //{
-    //    var expected = new PagedResult<UserVm>();
-    //    _mediatorMock.Setup(m => m.Send(It.IsAny<ListUsersQuery>(), It.IsAny<CancellationToken>()))
-    //        .ReturnsAsync(expected);
+    [Fact]
+    public async Task List_ReturnsPagedResult()
+    {
+        var expected = new PagedResult<UserVm>(
+            new[] {
+                new UserVm(Guid.NewGuid(), "teste@teste.com", "Teste", Role.ALUNO, DateTime.UtcNow, null)
+            },
+            Total: 1,
+            Page: 1,
+            PageSize: 10
+        );
 
-    //    var result = await _controller.List();
+        _mediatorMock.Setup(m => m.Send(It.IsAny<ListUsersQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
 
-    //    Assert.Equal(expected, result);
-    //    _mediatorMock.Verify(m => m.Send(It.IsAny<ListUsersQuery>(), It.IsAny<CancellationToken>()), Times.Once);
-    //}
+        var result = await _controller.List();
 
-//    [Fact]
-//    public async Task GetById_ReturnsUserVm()
-//    {
-//        var userId = Guid.NewGuid();
-//        var expected = new UserVm();
-//        _mediatorMock.Setup(m => m.Send(It.IsAny<GetUserByIdQuery>(), It.IsAny<CancellationToken>()))
-//            .ReturnsAsync(expected);
+        Assert.Equal(expected, result);
+        _mediatorMock.Verify(m => m.Send(It.IsAny<ListUsersQuery>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
 
-//        var result = await _controller.GetById(userId);
+    [Fact]
+    public async Task GetById_ReturnsUserVm()
+    {
+        var userId = Guid.NewGuid();
+        var expected = new UserVm(userId, "rafael@test.com", "Rafael", Role.ADMIN, DateTime.UtcNow, null);
 
-//        Assert.Equal(expected, result);
-//        _mediatorMock.Verify(m => m.Send(It.Is<GetUserByIdQuery>(q => q.Id == userId), It.IsAny<CancellationToken>()), Times.Once);
-//    }
+        _mediatorMock.Setup(m => m.Send(It.IsAny<GetUserByIdQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
 
-//    [Fact]
-//    public async Task Create_ReturnsUserVm()
-//    {
-//        var dto = new RegisterUserDto();
-//        var expected = new UserVm();
-//        _mediatorMock.Setup(m => m.Send(It.IsAny<RegisterUserCommand>(), It.IsAny<CancellationToken>()))
-//            .ReturnsAsync(expected);
+        var result = await _controller.GetById(userId);
 
-//        var result = await _controller.Create(dto);
+        Assert.Equal(expected, result);
+        _mediatorMock.Verify(m => m.Send(It.Is<GetUserByIdQuery>(q => q.Id == userId), It.IsAny<CancellationToken>()), Times.Once);
+    }
 
-//        Assert.Equal(expected, result);
-//        _mediatorMock.Verify(m => m.Send(It.Is<RegisterUserCommand>(c => c.Dto == dto), It.IsAny<CancellationToken>()), Times.Once);
-//    }
+    [Fact]
+    public async Task Create_ReturnsUserVm()
+    {
+        var dto = new RegisterUserDto(
+            Email: "novo@teste.com",
+            Senha: "Senha123",
+            Nome: "Novo Usuário",
+            Role: Role.ALUNO
+        );
 
-//    [Fact]
-//    public async Task Update_ReturnsUserVm()
-//    {
-//        var userId = Guid.NewGuid();
-//        var dto = new UpdateUserDto("rafaelnicoletti@hotmail.com", APIUsuarios.Domain.Role.ADMIN);
-//        var expected = new UserVm();
-//        _mediatorMock.Setup(m => m.Send(It.IsAny<UpdateUserCommand>(), It.IsAny<CancellationToken>()))
-//            .ReturnsAsync(expected);
+        var expected = new UserVm(Guid.NewGuid(), dto.Email, dto.Nome, dto.Role ?? Role.ALUNO, DateTime.UtcNow, null);
 
-//        var result = await _controller.Update(userId, dto);
+        _mediatorMock.Setup(m => m.Send(It.IsAny<RegisterUserCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
 
-//        Assert.Equal(expected, result);
-//        _mediatorMock.Verify(m => m.Send(It.Is<UpdateUserCommand>(c => c.Id == userId && c.Dto == dto), It.IsAny<CancellationToken>()), Times.Once);
-//    }
+        var result = await _controller.Create(dto);
 
-//    [Fact]
-//    public async Task ChangePassword_ReturnsNoContent()
-//    {
-//        var userId = Guid.NewGuid();
-//        var dto = new ChangePasswordDto("","");
-//        _mediatorMock.Setup(m => m.Send(It.IsAny<ChangePasswordCommand>(), It.IsAny<CancellationToken>()))
-//            .ReturnsAsync(Unit.Value);
+        Assert.Equal(expected, result);
+        _mediatorMock.Verify(m => m.Send(It.Is<RegisterUserCommand>(c => c.Dto == dto), It.IsAny<CancellationToken>()), Times.Once);
+    }
 
-//        var result = await _controller.ChangePassword(userId, dto);
+    [Fact]
+    public async Task Update_ReturnsUserVm()
+    {
+        var userId = Guid.NewGuid();
+        var dto = new UpdateUserDto("Usuário Atualizado", Role.ADMIN);
+        var expected = new UserVm(userId, "rafael@test.com", dto.Nome, Role.ADMIN, DateTime.UtcNow, DateTime.UtcNow);
 
-//        Assert.IsType<NoContentResult>(result);
-//        _mediatorMock.Verify(m => m.Send(It.Is<ChangePasswordCommand>(c => c.Id == userId && c.Dto == dto), It.IsAny<CancellationToken>()), Times.Once);
-//    }
+        _mediatorMock.Setup(m => m.Send(It.IsAny<UpdateUserCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(expected);
 
-//    [Fact]
-//    public async Task Delete_ReturnsNoContent()
-//    {
-//        var userId = Guid.NewGuid();
-//        _mediatorMock.Setup(m => m.Send(It.IsAny<DeleteUserCommand>(), It.IsAny<CancellationToken>()))
-//            .ReturnsAsync(Unit.Value);
+        var result = await _controller.Update(userId, dto);
 
-//        var result = await _controller.Delete(userId);
+        Assert.Equal(expected, result);
+        _mediatorMock.Verify(m => m.Send(It.Is<UpdateUserCommand>(c => c.Id == userId && c.Dto == dto), It.IsAny<CancellationToken>()), Times.Once);
+    }
 
-//        Assert.IsType<NoContentResult>(result);
-//        _mediatorMock.Verify(m => m.Send(It.Is<DeleteUserCommand>(c => c.Id == userId), It.IsAny<CancellationToken>()), Times.Once);
-//    }
+    [Fact]
+    public async Task ChangePassword_ReturnsNoContent()
+    {
+        var userId = Guid.NewGuid();
+        var dto = new ChangePasswordDto("SenhaAntiga123", "SenhaNova123");
+
+        _mediatorMock.Setup(m => m.Send(It.IsAny<ChangePasswordCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Unit.Value);
+
+        var result = await _controller.ChangePassword(userId, dto);
+
+        Assert.IsType<NoContentResult>(result);
+        _mediatorMock.Verify(m => m.Send(It.Is<ChangePasswordCommand>(c => c.Id == userId && c.Dto == dto), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Delete_ReturnsNoContent()
+    {
+        var userId = Guid.NewGuid();
+        _mediatorMock.Setup(m => m.Send(It.IsAny<DeleteUserCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Unit.Value);
+
+        var result = await _controller.Delete(userId);
+
+        Assert.IsType<NoContentResult>(result);
+        _mediatorMock.Verify(m => m.Send(It.Is<DeleteUserCommand>(c => c.Id == userId), It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

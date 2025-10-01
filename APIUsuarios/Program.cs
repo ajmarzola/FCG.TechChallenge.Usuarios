@@ -23,10 +23,12 @@ try
 
     var builder = WebApplication.CreateBuilder(args);
 
+    // Serilog
     builder.Host.UseSerilog((ctx, lc) => lc
         .ReadFrom.Configuration(ctx.Configuration)
         .Enrich.FromLogContext());
 
+    // MVC
     builder.Services.AddControllers();
 
     // Swagger + Bearer
@@ -53,7 +55,7 @@ try
         });
     }
 
-    // CORS (DEV)
+    // CORS (apenas DEV)
     builder.Services.AddCors(opt =>
     {
         opt.AddPolicy("Dev", p => p
@@ -62,18 +64,50 @@ try
             .AllowAnyMethod());
     });
 
-    // EF Core — SQLite
-    var sqlite = builder.Configuration.GetConnectionString("Sqlite") ?? "Data Source=users.db";
-    builder.Services.AddDbContext<UsersDbContext>(o => o.UseSqlite(sqlite));
+    // Npgsql timestamp legacy (evita warnings com DateTime)
+    AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+
+    // -------- PostgreSQL (connection string + DbContext)
+    static string BuildPostgresConnectionString(IConfiguration cfg)
+    {
+        // 1) ConnectionStrings:Postgres (recomendado)
+        var cs = cfg.GetConnectionString("Postgres");
+        if (!string.IsNullOrWhiteSpace(cs)) return cs;
+
+        // 2) DATABASE_URL / POSTGRES_URL (estilo Render/Heroku: postgres://user:pass@host:port/db)
+        var url = Environment.GetEnvironmentVariable("DATABASE_URL")
+              ?? Environment.GetEnvironmentVariable("POSTGRES_URL");
+        if (!string.IsNullOrWhiteSpace(url) && url.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
+        {
+            var uri = new Uri(url);
+            var userInfo = uri.UserInfo.Split(':');
+            var user = Uri.UnescapeDataString(userInfo[0]);
+            var pass = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : "";
+            var host = uri.Host;
+            var port = uri.Port > 0 ? uri.Port : 5432;
+            var db = uri.AbsolutePath.Trim('/');
+
+            return $"Host={host};Port={port};Database={db};Username={user};Password={pass};Ssl Mode=Require;Trust Server Certificate=true";
+        }
+
+        // 3) fallback local
+        return "Host=localhost;Port=5432;Database=usersdb;Username=postgres;Password=postgres;Ssl Mode=Disable";
+    }
+
+    var pg = BuildPostgresConnectionString(builder.Configuration);
+
+    builder.Services.AddDbContext<UsersDbContext>(o =>
+    {
+        o.UseNpgsql(pg, npg => npg.MigrationsAssembly(typeof(UsersDbContext).Assembly.FullName));
+        o.UseSnakeCaseNamingConvention(); // opcional
+    });
 
     // CQRS + FluentValidation
-    // MediatR v12+
-    // usando a API antiga (v10/v11)
+    // Registra os handlers localizados no assembly da camada Application
     builder.Services.AddMediatR(
-        typeof(Program).Assembly,                          // assembly da API
-        typeof(APIUsuarios.Application.ListUsersQuery).Assembly // assembly onde estão os handlers (Application)
+        typeof(Program).Assembly,
+        typeof(APIUsuarios.Application.ListUsersQuery).Assembly
     );
-
 
     builder.Services.AddFluentValidationAutoValidation();
     builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
@@ -95,7 +129,7 @@ try
       .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
       .AddJwtBearer(options =>
       {
-          options.MapInboundClaims = false;
+          options.MapInboundClaims = false; // usaremos "sub" e "role" diretamente
           options.TokenValidationParameters = new TokenValidationParameters
           {
               ValidateIssuer = true,
@@ -117,9 +151,8 @@ try
           };
       });
 
-    // 🔧 FALTAVA no seu código: autorização + PasswordService no DI
-    builder.Services.AddAuthorization();                  // <-- adicionado
-    builder.Services.AddScoped<PasswordService>();        // <-- adicionado
+    builder.Services.AddAuthorization();
+    builder.Services.AddScoped<PasswordService>();
 
     // Injetar mesma chave/opções no JwtTokenService (assina = valida)
     builder.Services.AddSingleton(keyBytes);
@@ -131,6 +164,7 @@ try
     if (app.Environment.IsDevelopment())
         app.UseDeveloperExceptionPage();
 
+    // Swagger UI
     if (builder.Configuration.GetValue("Swagger:Enabled", true))
     {
         app.UseSwagger();
@@ -168,12 +202,15 @@ try
     Directory.CreateDirectory(docsDir);
     Directory.CreateDirectory(Path.Combine(app.Environment.ContentRootPath, "Logs"));
 
-    // criar DB + SEED ADMIN
+    // Criar/Migrar DB + SEED ADMIN
     using (var scope = app.Services.CreateScope())
     {
         var db = scope.ServiceProvider.GetRequiredService<UsersDbContext>();
-        await db.Database.EnsureCreatedAsync();
-        Log.Information("SQLite file em: {DbPath}", db.Database.GetDbConnection().DataSource);
+
+        // >>> Postgres: use migrations (não EnsureCreated)
+        await db.Database.MigrateAsync();
+
+        Log.Information("Postgres conectado: {Conn}", db.Database.GetDbConnection().ConnectionString);
 
         var cfg = scope.ServiceProvider.GetRequiredService<IConfiguration>();
         var pwdSvc = scope.ServiceProvider.GetRequiredService<PasswordService>();
@@ -191,7 +228,7 @@ try
                 Email = adminEmail,
                 Nome = adminNome,
                 Role = Role.ADMIN,
-                PasswordHash = "TEMP", // required
+                PasswordHash = "TEMP",
                 CreatedAtUtc = DateTime.UtcNow,
                 UpdatedAtUtc = DateTime.UtcNow
             };
@@ -216,7 +253,6 @@ try
     Log.Information("Dica: no YAML use 'servers: - url: /' para evitar CORS/mixed content no Swagger UI.");
 
     app.Run();
- 
 }
 catch (Exception ex)
 {
