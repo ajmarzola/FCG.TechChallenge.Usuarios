@@ -1,5 +1,5 @@
 name: CI-CD APIUsuarios (tests → image → ACR → WebApp)
-
+ 
 on:
   push:
     branches: [ "master" ]   # ajuste se usar main
