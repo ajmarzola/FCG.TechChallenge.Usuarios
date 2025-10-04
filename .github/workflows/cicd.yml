@@ -4,7 +4,7 @@ on:
   push:
     branches: [ "master" ]   # ajuste se usar main
   workflow_dispatch:
-
+ 
 env:
   # --- seu ambiente Azure/ACR/WebApp ---
   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
