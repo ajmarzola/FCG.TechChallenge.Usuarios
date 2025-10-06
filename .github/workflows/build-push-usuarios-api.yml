@@ -4,7 +4,7 @@ on:
   push:
     branches: [ master ]
     paths:
-      - 'src/Usuarios.Api/**'              # ajuste o caminho do seu projeto
+      - 'APIUsuarios/**'
       - '.github/workflows/build-push-usuarios-api.yml'
 
 env:
@@ -35,11 +35,19 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      # (Opcional) Debug para confirmar caminhos
+      - name: Show repo tree (debug)
+        run: |
+          pwd
+          ls -la
+          ls -la APIUsuarios || true
+
       - name: Build & push image
         run: |
-            IMAGE_URI="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${IMAGE_TAG}"
-            docker build -f Dockerfile -t "$IMAGE_URI" .
-            docker tag "$IMAGE_URI" "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:latest"
-            docker push "$IMAGE_URI"
-            docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:latest"
-            echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
+          IMAGE_URI="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          # Dockerfile fica em APIUsuarios/Dockerfile e o contexto é a pasta APIUsuarios
+          docker build -f APIUsuarios/Dockerfile -t "$IMAGE_URI" APIUsuarios
+          docker tag "$IMAGE_URI" "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:latest"
+          docker push "$IMAGE_URI"
+          docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:latest"
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
