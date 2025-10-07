@@ -252,5 +252,7 @@ Projeto acadêmico, parte do **Tech Challenge FIAP**. Verifique os termos aplic�
 
 ## 👥 Integrantes do Grupo
 • Anderson Marzola — RM360850 — Discord: aj.marzola
+
 • Rafael Nicoletti — RM361308 — Discord: rafaelnicoletti_
+
 • Valber Martins — RM3608959 — Discord: valberdev
