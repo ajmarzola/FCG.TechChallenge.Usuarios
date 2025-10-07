@@ -9,7 +9,7 @@
 - **Pagamentos**: orquestração de transações e status por eventos  
   https://github.com/ajmarzola/FCG.TechChallenge.Pagamentos
 
-🔎 **Projeto anterior (base conceitual e pipelines):**  
+🔎 **Projeto anterior (base conceitual):**  
 https://github.com/ajmarzola/Grupo49-TechChallenge
 
 🧭 **Miro – Visão de Arquitetura:**  
