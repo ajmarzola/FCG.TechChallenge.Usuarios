@@ -1,0 +1,53 @@
+name: build-push-usuarios-api
+
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'APIUsuarios/**'
+      - '.github/workflows/build-push-usuarios-api.yml'
+
+env:
+  AWS_REGION: sa-east-1
+  AWS_ACCOUNT_ID: "932732506622"
+  ECR_REPOSITORY: "usuarios-api"
+  IMAGE_TAG: "${{ github.sha }}"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # (Opcional) Debug para confirmar caminhos
+      - name: Show repo tree (debug)
+        run: |
+          pwd
+          ls -la
+          ls -la APIUsuarios || true
+
+      - name: Build & push image
+        run: |
+          IMAGE_URI="${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          # Dockerfile fica em APIUsuarios/Dockerfile e o contexto é a pasta APIUsuarios
+          docker build -f APIUsuarios/Dockerfile -t "$IMAGE_URI" APIUsuarios
+          docker tag "$IMAGE_URI" "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:latest"
+          docker push "$IMAGE_URI"
+          docker push "${{ steps.ecr.outputs.registry }}/${ECR_REPOSITORY}:latest"
+          echo "IMAGE_URI=${IMAGE_URI}" >> $GITHUB_ENV
