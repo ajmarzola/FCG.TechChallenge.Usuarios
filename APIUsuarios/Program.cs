@@ -12,6 +12,7 @@ using APIUsuarios.Application;
 using APIUsuarios.Infrastructure.Data;
 using APIUsuarios.Infrastructure.Services;
 using APIUsuarios.Domain;
+using Microsoft.IdentityModel.Logging;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -19,6 +20,8 @@ Log.Logger = new LoggerConfiguration()
 
 try
 {
+    // ATIVA MENSAGENS DETALHADAS DO JWT (com PII)
+    IdentityModelEventSource.ShowPII = true;
     Log.Information("Starting Usuarios.Api");
 
     var builder = WebApplication.CreateBuilder(args);
@@ -113,43 +116,56 @@ try
     builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
     // ===== JWT
-    string rawKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key não configurado");
-
-    byte[] keyBytes = rawKey.StartsWith("base64:", StringComparison.OrdinalIgnoreCase)
+    string rawKey = builder.Configuration["Jwt:Key"];
+    byte[] keyBytes = rawKey.StartsWith("base64:")
         ? Convert.FromBase64String(rawKey["base64:".Length..])
         : Encoding.UTF8.GetBytes(rawKey);
 
     if (keyBytes.Length < 32)
-        throw new InvalidOperationException($"Jwt:Key muito curta ({keyBytes.Length} bytes). Para HS256 use >= 32 bytes.");
+        throw new InvalidOperationException("A chave HS256 deve ter no mínimo 256 bits (32 bytes).");
+
 
     var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "GamesPlatform";
     var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "games-platform";
 
     builder.Services
-      .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-      .AddJwtBearer(options =>
-      {
-          options.MapInboundClaims = false; // usaremos "sub" e "role" diretamente
-          options.TokenValidationParameters = new TokenValidationParameters
-          {
-              ValidateIssuer = true,
-              ValidateAudience = true,
-              ValidateLifetime = true,
-              ValidateIssuerSigningKey = true,
-              ValidIssuer = jwtIssuer,
-              ValidAudience = jwtAudience,
-              IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
-              ClockSkew = TimeSpan.FromMinutes(30),
-              NameClaimType = "sub",
-              RoleClaimType = "role"
-          };
-          options.Events = new JwtBearerEvents
-          {
-              OnAuthenticationFailed = ctx => { Serilog.Log.Error(ctx.Exception, "JWT fail"); return Task.CompletedTask; },
-              OnChallenge = ctx => { Serilog.Log.Warning("JWT 401: {Err} {Desc}", ctx.Error, ctx.ErrorDescription); return Task.CompletedTask; },
-              OnTokenValidated = ctx => { Serilog.Log.Information("JWT ok: {Claims}", string.Join(", ", ctx.Principal!.Claims.Select(c => $"{c.Type}={c.Value}"))); return Task.CompletedTask; }
-          };
-      });
+     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+     .AddJwtBearer(options =>
+     {
+         options.MapInboundClaims = false;
+
+         options.TokenValidationParameters = new TokenValidationParameters
+         {
+             ValidateIssuer = true,
+             ValidIssuer = jwtIssuer,
+             ValidateAudience = true,
+             ValidAudience = jwtAudience,
+             ValidateLifetime = true,
+             ValidateIssuerSigningKey = true,
+             RequireSignedTokens = true, // <--- CRÍTICO PARA USO COM Symmetric Key
+             IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
+             ClockSkew = TimeSpan.FromMinutes(30),
+             NameClaimType = "sub",
+             RoleClaimType = "role"
+         };
+
+         // Logs úteis para debugging
+         options.Events = new JwtBearerEvents
+         {
+             OnAuthenticationFailed = context =>
+             {
+                 Log.Error(context.Exception, "Falha na autenticação JWT");
+                 return Task.CompletedTask;
+             },
+             OnTokenValidated = context =>
+             {
+                 var claims = string.Join(", ", context.Principal!.Claims.Select(c => $"{c.Type}={c.Value}"));
+                 Log.Information("Token JWT validado com sucesso: {Claims}", claims);
+                 return Task.CompletedTask;
+             }
+         };
+     });
+
 
     builder.Services.AddAuthorization();
     builder.Services.AddScoped<PasswordService>();
