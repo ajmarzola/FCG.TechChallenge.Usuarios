@@ -73,7 +73,7 @@ Como evolução do **Grupo49-TechChallenge**, a responsabilidade de identidade f
 ---
 
 ## Monitoramento
-- Instalação do stack de monitoramento via Helm — ver [values-monitoring.yaml](https://github.com/ajmarzola/Grupo49-TechChallenge/blob/main/infra/monitoring/values-monitoring.yaml)
+- Instalação do stack de monitoramento via Helm — ver [infra](https://github.com/ajmarzola/Grupo49-TechChallenge/blob/main/infra/)
 
 ---
 
