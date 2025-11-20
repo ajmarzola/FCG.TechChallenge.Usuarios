@@ -34,7 +34,9 @@ namespace APIUsuarios.Controllers
         public IActionResult ValidateToken([FromBody] TokenValidationRequest body)
         {
             if (body is null || string.IsNullOrWhiteSpace(body.token))
+            {
                 return BadRequest(new { error = "Token ausente." });
+            }
 
             // 🔴 ESTA PARTE AQUI ESTÁ ERRADA:
             // var key = _cfg["Jwt:Key"] ?? "dev-secret-change-me";

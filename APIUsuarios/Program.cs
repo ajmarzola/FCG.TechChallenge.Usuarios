@@ -1,22 +1,21 @@
-﻿using System.Text;
+﻿using APIUsuarios.Application;
+using APIUsuarios.Domain;
+using APIUsuarios.Infrastructure.Data;
+using APIUsuarios.Infrastructure.Services;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using MediatR;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Logging;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Prometheus;
 using Serilog;
-using APIUsuarios.Application;
-using APIUsuarios.Infrastructure.Data;
-using APIUsuarios.Infrastructure.Services;
-using APIUsuarios.Domain;
-using Microsoft.IdentityModel.Logging;
+using System.Text;
 
-Log.Logger = new LoggerConfiguration()
-    .WriteTo.Console()
-    .CreateBootstrapLogger();
+Log.Logger = new LoggerConfiguration().WriteTo.Console().CreateBootstrapLogger();
 
 try
 {
@@ -26,10 +25,11 @@ try
 
     var builder = WebApplication.CreateBuilder(args);
 
+    // Health checks (prontos para probes)
+    builder.Services.AddHealthChecks();
+
     // Serilog
-    builder.Host.UseSerilog((ctx, lc) => lc
-        .ReadFrom.Configuration(ctx.Configuration)
-        .Enrich.FromLogContext());
+    builder.Host.UseSerilog((ctx, lc) => lc.ReadFrom.Configuration(ctx.Configuration).Enrich.FromLogContext());
 
     // MVC
     builder.Services.AddControllers();
@@ -38,6 +38,7 @@ try
     if (builder.Configuration.GetValue("Swagger:Enabled", true))
     {
         builder.Services.AddEndpointsApiExplorer();
+
         builder.Services.AddSwaggerGen(c =>
         {
             c.SwaggerDoc("v1", new OpenApiInfo { Title = "Usuarios API", Version = "v1" });
@@ -59,13 +60,7 @@ try
     }
 
     // CORS (apenas DEV)
-    builder.Services.AddCors(opt =>
-    {
-        opt.AddPolicy("Dev", p => p
-            .AllowAnyOrigin()
-            .AllowAnyHeader()
-            .AllowAnyMethod());
-    });
+    builder.Services.AddCors(opt => { opt.AddPolicy("Dev", p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()); });
 
     // Npgsql timestamp legacy (evita warnings com DateTime)
     AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
@@ -75,11 +70,15 @@ try
     {
         // 1) ConnectionStrings:Postgres (recomendado)
         var cs = cfg.GetConnectionString("Postgres");
-        if (!string.IsNullOrWhiteSpace(cs)) return cs;
+
+        if (!string.IsNullOrWhiteSpace(cs))
+        {
+            return cs;
+        }
 
         // 2) DATABASE_URL / POSTGRES_URL (estilo Render/Heroku: postgres://user:pass@host:port/db)
-        var url = Environment.GetEnvironmentVariable("DATABASE_URL")
-              ?? Environment.GetEnvironmentVariable("POSTGRES_URL");
+        var url = Environment.GetEnvironmentVariable("DATABASE_URL") ?? Environment.GetEnvironmentVariable("POSTGRES_URL");
+
         if (!string.IsNullOrWhiteSpace(url) && url.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase))
         {
             var uri = new Uri(url);
@@ -89,7 +88,6 @@ try
             var host = uri.Host;
             var port = uri.Port > 0 ? uri.Port : 5432;
             var db = uri.AbsolutePath.Trim('/');
-
             return $"Host={host};Port={port};Database={db};Username={user};Password={pass};Ssl Mode=Require;Trust Server Certificate=true";
         }
 
@@ -107,66 +105,59 @@ try
 
     // CQRS + FluentValidation
     // Registra os handlers localizados no assembly da camada Application
-    builder.Services.AddMediatR(
-        typeof(Program).Assembly,
-        typeof(APIUsuarios.Application.ListUsersQuery).Assembly
-    );
+    builder.Services.AddMediatR(typeof(Program).Assembly, typeof(ListUsersQuery).Assembly);
 
     builder.Services.AddFluentValidationAutoValidation();
     builder.Services.AddValidatorsFromAssembly(typeof(Program).Assembly);
 
     // ===== JWT
     string rawKey = builder.Configuration["Jwt:Key"];
-    byte[] keyBytes = rawKey.StartsWith("base64:")
-        ? Convert.FromBase64String(rawKey["base64:".Length..])
-        : Encoding.UTF8.GetBytes(rawKey);
+    byte[] keyBytes = rawKey.StartsWith("base64:") ? Convert.FromBase64String(rawKey["base64:".Length..]) : Encoding.UTF8.GetBytes(rawKey);
 
     if (keyBytes.Length < 32)
+    {
         throw new InvalidOperationException("A chave HS256 deve ter no mínimo 256 bits (32 bytes).");
-
+    }
 
     var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "GamesPlatform";
     var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "games-platform";
 
-    builder.Services
-     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-     .AddJwtBearer(options =>
-     {
-         options.MapInboundClaims = false;
-
-         options.TokenValidationParameters = new TokenValidationParameters
-         {
-             ValidateIssuer = true,
-             ValidIssuer = jwtIssuer,
-             ValidateAudience = true,
-             ValidAudience = jwtAudience,
-             ValidateLifetime = true,
-             ValidateIssuerSigningKey = true,
-             RequireSignedTokens = true, // <--- CRÍTICO PARA USO COM Symmetric Key
-             IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
-             ClockSkew = TimeSpan.FromMinutes(30),
-             NameClaimType = "sub",
-             RoleClaimType = "role"
-         };
-
-         // Logs úteis para debugging
-         options.Events = new JwtBearerEvents
-         {
-             OnAuthenticationFailed = context =>
-             {
-                 Log.Error(context.Exception, "Falha na autenticação JWT");
-                 return Task.CompletedTask;
-             },
-             OnTokenValidated = context =>
-             {
-                 var claims = string.Join(", ", context.Principal!.Claims.Select(c => $"{c.Type}={c.Value}"));
-                 Log.Information("Token JWT validado com sucesso: {Claims}", claims);
-                 return Task.CompletedTask;
-             }
-         };
-     });
-
-
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+    {
+        options.MapInboundClaims = false;
+        
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = jwtIssuer,
+            ValidateAudience = true,
+            ValidAudience = jwtAudience,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            RequireSignedTokens = true, // <--- CRÍTICO PARA USO COM Symmetric Key
+            IssuerSigningKey = new SymmetricSecurityKey(keyBytes),
+            ClockSkew = TimeSpan.FromMinutes(30),
+            NameClaimType = "sub",
+            RoleClaimType = "role"
+        };
+        
+        // Logs úteis para debugging
+        options.Events = new JwtBearerEvents
+        {
+            OnAuthenticationFailed = context =>
+            {
+                Log.Error(context.Exception, "Falha na autenticação JWT");
+                return Task.CompletedTask;
+            },
+            OnTokenValidated = context =>
+            {
+                var claims = string.Join(", ", context.Principal!.Claims.Select(c => $"{c.Type}={c.Value}"));
+                Log.Information("Token JWT validado com sucesso: {Claims}", claims);
+                return Task.CompletedTask;
+            }
+        };
+    });
+    
     builder.Services.AddAuthorization();
     builder.Services.AddScoped<PasswordService>();
 
@@ -177,8 +168,18 @@ try
 
     var app = builder.Build();
 
+    // endpoints de health
+    app.MapHealthChecks("/health/live");
+    app.MapHealthChecks("/health/ready");
+
+    // Middleware Prometheus (expõe /metrics)
+    app.UseHttpMetrics();          // métricas de request/latência
+    app.MapMetrics("/metrics");    // endpoint padrão Prometheus
+
     if (app.Environment.IsDevelopment())
+    {
         app.UseDeveloperExceptionPage();
+    }
 
     // Swagger UI
     if (builder.Configuration.GetValue("Swagger:Enabled", true))
@@ -203,7 +204,9 @@ try
     app.UseRouting();
 
     if (app.Environment.IsDevelopment())
+    {
         app.UseCors("Dev");
+    }
 
     app.UseSerilogRequestLogging();
 
@@ -267,7 +270,7 @@ try
     Log.Information("YAML path esperado: {YamlPath}", yamlPath);
     Log.Information("YAML existe? {Exists}", System.IO.File.Exists(yamlPath));
     Log.Information("Dica: no YAML use 'servers: - url: /' para evitar CORS/mixed content no Swagger UI.");
-
+    app.MapGet("/", () => "OK");
     app.Run();
 }
 catch (Exception ex)

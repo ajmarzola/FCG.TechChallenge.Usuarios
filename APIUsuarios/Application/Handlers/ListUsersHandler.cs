@@ -17,7 +17,9 @@ namespace APIUsuarios.Application
             var query = _db.Users.AsNoTracking().AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(email))
+            {
                 query = query.Where(u => u.Email.Contains(email));
+            }
 
             // total antes da paginação
             var total = await query.CountAsync(ct);

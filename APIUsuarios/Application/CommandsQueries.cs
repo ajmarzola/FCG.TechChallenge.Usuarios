@@ -26,7 +26,9 @@ namespace APIUsuarios.Application
 
             // índice único é recomendado no DbContext/Fluent API, mas cheque aqui também
             if (await _db.Users.AnyAsync(u => u.Email == email, ct))
+            {
                 throw new("E-mail já cadastrado");
+            }
 
             var now = DateTime.UtcNow;
 
@@ -65,13 +67,17 @@ namespace APIUsuarios.Application
             var isSelf = c.CurrentSub == u.Id.ToString();
 
             if (!isAdmin && !isSelf)
+            {
                 throw new UnauthorizedAccessException(); // veja observação abaixo sobre mapear para 403
+            }
 
             u.Nome = c.Dto.Nome;
 
             // ADMIN pode alterar role, mas só se o DTO enviou um valor
             if (isAdmin && c.Dto.Role.HasValue)
+            {
                 u.Role = c.Dto.Role.Value;
+            }
 
             u.UpdatedAtUtc = DateTime.UtcNow;
             await _db.SaveChangesAsync(ct);
@@ -96,12 +102,16 @@ namespace APIUsuarios.Application
             var isSelf = c.CurrentSub == u.Id.ToString();
 
             if (!isAdmin && !isSelf)
+            {
                 throw new UnauthorizedAccessException();
+            }
 
             if (!isAdmin)
             {
                 if (!_pwd.Verify(u, c.Dto.SenhaAtual))
+                {
                     throw new("Senha atual incorreta");
+                }
             }
 
             u.PasswordHash = _pwd.Hash(u, c.Dto.NovaSenha);
@@ -122,7 +132,10 @@ namespace APIUsuarios.Application
         {
             // para versões mais antigas do C#, use new object[] { c.Id }
             var u = await _db.Users.FindAsync(new object[] { c.Id }, ct);
-            if (u is null) throw new("Usuário não encontrado");
+            if (u is null)
+            {
+                throw new("Usuário não encontrado");
+            }
 
             _db.Users.Remove(u);
             await _db.SaveChangesAsync(ct);
@@ -143,7 +156,9 @@ namespace APIUsuarios.Application
 
             var u = await _db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Email == email, ct);
             if (u is null || !_pwd.Verify(u, q.Dto.Senha))
+            {
                 throw new("Usuário ou senha inválidos");
+            }
 
             return _jwt.Create(u); // 30min padrão no seu JwtTokenService
         }
@@ -158,13 +173,18 @@ namespace APIUsuarios.Application
         public async Task<UserVm?> Handle(GetUserByIdQuery q, CancellationToken ct)
         {
             var u = await _db.Users.AsNoTracking().FirstOrDefaultAsync(x => x.Id == q.Id, ct);
-            if (u is null) return null;
+            if (u is null)
+            {
+                return null;
+            }
 
             var isAdmin = q.CurrentRole == Role.ADMIN.ToString();
             var isSelf = q.CurrentSub == u.Id.ToString();
 
             if (!isAdmin && !isSelf)
+            {
                 throw new UnauthorizedAccessException(); // veja observação abaixo
+            }
 
             return new(u.Id, u.Email, u.Nome, u.Role, u.CreatedAtUtc, u.UpdatedAtUtc);
         }
